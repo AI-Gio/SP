@@ -214,6 +214,7 @@ def CSVtoPostgres(TableName, DBcolumn1name, DBcolumn2name):
                             """)
         pbar.close()
 
+"""__==.. Run Section ..==__"""
 # run this first
 # ProductsCSV()
 # CollabRecCSV()
