@@ -4,7 +4,7 @@ import random
 from tqdm import tqdm
 import pymongo
 # bron: https://www.psycopg.org/docs/usage.html
-conn = psycopg2.connect("dbname=SPsum3 user=postgres password= D@t@b@s3!")
+conn = psycopg2.connect("dbname=recommendation_engine user=postgres password= D@t@b@s3!")
 cur = conn.cursor()
 
 """__==.. Database section ..==__"""
@@ -31,21 +31,30 @@ def DropTable(Table):
 
 """__==.. Content Recommendation section ..==__"""
 
+def ProductsCSV():
+    """
+    Collects the id and its sub category from postgresql and puts it in a csv file
+    """
+    cur.execute("select _id, sub_category from products where sub_category is not NULL")
+    dataset = cur.fetchall()
+    with open("productsrec.csv", "w", newline='') as f:
+        thewriter = csv.writer(f)
+        for values in dataset:
+            thewriter.writerow([values[0],values[1]])
+
 def ProductSortSubCat():
     """
     Sorts all of the products by sub category
     :return: A dictionary with all of the sub categories with the products that belong to that sub category
     """
     SameSubCatDict = {}
-    with open('productsFull.csv') as f:
-        reader = csv.reader(f, delimiter=";")
-        for x, row in enumerate(reader):
-            if x == 0:
-                continue
-            elif row[4] not in SameSubCatDict:
-                SameSubCatDict[row[4]] = [row[0]]
-            elif row[4] in SameSubCatDict:
-                SameSubCatDict[row[4]].append(row[0])
+    with open('productsrec.csv') as f:
+        reader = csv.reader(f, delimiter=",")
+        for row in reader:
+            if row[1] not in SameSubCatDict:
+                SameSubCatDict[row[1]] = [row[0]]
+            elif row[1] in SameSubCatDict:
+                SameSubCatDict[row[1]].append(row[0])
     return SameSubCatDict
 
 def ContentRecDict():
@@ -79,9 +88,6 @@ def toPostgres(TableName, RecommendDict, DBcolumn1name, DBcolumn2name):
             except:
                 continue
 
-# CreateTable("ContentRec", "Product", "RecommendedProd")
-# toPostgres("contentrec", ContentRecDict(), 'Product', 'RecommendedProd')
-# DropTable("contentrec")
 
 """__==.. Collaborative Recommendation section ..==__"""
 def HighestFreq(lst):
@@ -100,21 +106,40 @@ def HighestFreq(lst):
     max_key = max(freq, key=freq.get)
     return max_key
 
-def PreviouslyRecomDict():
+def PrevRec2CSV():
     """
-    Retrieves information from mongoDB and writes all profile id's with previously recommended products in a dictionary
-    Takes about 35 seconds to create dictionary
-    :returns: Dictionary with key = profile id and value = list of product id's
+    puts profiles with previously recommended products in csv file
+    This function is necessary, to put the data into a csv file,
+    transferring it too a database would take too long
     """
     myclient = pymongo.MongoClient("mongodb://localhost:27017/")
     mydb = myclient["huwebshop"]
     mycol = mydb["profiles"]
     PrevRecomDict = {}
-    for x in mycol.find({"previously_recommended":{'$exists':True}}):
-        PrevRecomProd = x['previously_recommended']
-        if len(PrevRecomProd) != 0:
-            PrevRecomDict[str(x['_id'])] = PrevRecomProd
-    return PrevRecomDict
+    with open('prev_rec', 'w', newline='') as f:
+        thewriter = csv.writer(f)
+        for x in mycol.find({"previously_recommended":{'$exists':True}}):
+            PrevRecomProd = x['previously_recommended']
+            if len(PrevRecomProd) != 0:
+                for prod in PrevRecomProd:
+                    thewriter.writerow([str(x['_id']), prod])
+
+def PreviouslyRecomDict():
+    """
+    Retrieves information from csv file and writes all profile id's with previously recommended products in a dictionary
+    Takes about 35 seconds to create dictionary
+    :returns: Dictionary with key = profile id and value = list of product id's
+    """
+    PRD = {}
+    with open('prev_rec') as f:
+        reader = csv.reader(f, delimiter=',')
+        for row in reader:
+            if row[0] not in PRD:
+                PRD[row[0]] = [row[1]]
+            elif row[0] in PRD:
+                PRD[row[0]].append(row[1])
+    return PRD
+
 
 def ProductWithSubCatDict():
     """
@@ -122,13 +147,13 @@ def ProductWithSubCatDict():
     :return: Dictionary with key = product id and value = sub category
     """
     PWSCD = {}
-    with open('productsFull.csv') as f:
-        reader = csv.reader(f, delimiter=";")
+    with open('productsrec.csv') as f:
+        reader = csv.reader(f, delimiter=",")
         for x, row in enumerate(reader):
             if x == 0:
                 continue
-            elif row[4] != "":
-                PWSCD[row[0]] = row[4]
+            elif row[1] != "":
+                PWSCD[row[0]] = row[1]
     return PWSCD
 
 def SubCatProfileDict():
@@ -189,10 +214,18 @@ def CSVtoPostgres(TableName, DBcolumn1name, DBcolumn2name):
                             """)
         pbar.close()
 
-
+# run this first
+# ProductsCSV()
 # CollabRecCSV()
-CreateTable("CollabRec", "Profile", "RecommendationProd")
-CSVtoPostgres("CollabRec", "Profile", "RecommendationProd")
+
+# run this after
+# CreateTable("ContentRec", "Product", "RecommendedProd")
+# toPostgres("contentrec", ContentRecDict(), 'Product', 'RecommendedProd')
+# CreateTable("CollabRec", "Profile", "RecommendationProd")
+# CSVtoPostgres("CollabRec", "Profile", "RecommendationProd")
+
+# run this to drop the tables
+# DropTable("contentrec")
 # DropTable("CollabRec")
 
 cur.close()
